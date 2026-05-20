@@ -1,0 +1,17 @@
+{{template "header" .}}
+<h1>Metrics Summary</h1>
+<section class="summary">
+  <div>Total jobs<strong>{{.Summary.TotalJobs}}</strong></div>
+  <div>Completed<strong>{{.Summary.CompletedJobs}}</strong></div>
+  <div>Failed or DLQ<strong>{{.Summary.FailedJobs}}</strong></div>
+  <div>Rows<strong>{{.Summary.TotalRows}}</strong></div>
+  <div>Events<strong>{{.Summary.TotalEvents}}</strong></div>
+  <div>Sequence gaps<strong>{{.Summary.SequenceGaps}}</strong></div>
+</section>
+{{if .Metrics}}
+<table>
+  <thead><tr><th>Job</th><th>rows</th><th>events</th><th>malformed</th><th>gaps</th><th>duration</th><th>rows/sec</th><th>events/sec</th><th>p95 latency</th><th>peak alloc MB</th></tr></thead>
+  <tbody>{{range .Metrics}}<tr><td><a href="/dashboard/jobs/{{.Job.ID}}"><code>{{.Job.ID}}</code></a></td><td>{{.Metric.Rows}}</td><td>{{.Metric.Events}}</td><td>{{.Metric.MalformedEvents}}</td><td>{{.Metric.SequenceGaps}}</td><td>{{.Metric.Duration}}</td><td>{{printf "%.2f" .Metric.RowsPerSecond}}</td><td>{{printf "%.2f" .Metric.EventsPerSecond}}</td><td>{{printf "%.2f ms" (millis .Metric.P95Latency)}}</td><td>{{printf "%.2f" (bytesMB .Metric.PeakAllocBytes)}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="empty">No replay metrics recorded.</p>{{end}}
+{{template "footer" .}}

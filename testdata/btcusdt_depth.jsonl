@@ -1,0 +1,4 @@
+{"event_type":"depth","symbol":"BTCUSDT","event_time":1710000000000,"first_update_id":1001,"final_update_id":1002,"bids":[["68250.10","0.500"],["68249.90","1.250"]],"asks":[["68251.00","0.250"],["68252.40","0.800"]]}
+{"event_type":"depth","symbol":"BTCUSDT","event_time":1710000000100,"first_update_id":1003,"final_update_id":1004,"bids":[["68250.20","0.450"],["68249.80","1.100"]],"asks":[["68251.10","0.300"],["68252.50","0.700"]]}
+{"event_type":"depth","symbol":"BTCUSDT","event_time":1710000000200,"first_update_id":1005,"final_update_id":1006,"bids":[["68250.30","0.400"],["68249.70","1.000"]],"asks":[["68251.20","0.350"],["68252.60","0.600"]]}
+{"event_type":"depth","symbol":"BTCUSDT","event_time":1710000000300,"first_update_id":1007,"final_update_id":1008,"bids":[["68250.40","0.350"],["68249.60","0.950"]],"asks":[["68251.30","0.400"],["68252.70","0.500"]]}

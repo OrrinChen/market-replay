@@ -1,0 +1,10 @@
+/bin/
+/dist/
+/tmp/
+/.tools/
+/market-replay
+/server
+/worker
+/kafka-replay
+*.test
+*.out

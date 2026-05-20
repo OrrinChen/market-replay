@@ -1,0 +1,31 @@
+{{template "header" .}}
+<h1>Job Detail</h1>
+<table>
+  <tbody>
+    <tr><th>Job</th><td><code>{{.Job.Job.ID}}</code></td></tr>
+    <tr><th>Dataset</th><td>{{.Job.Dataset.Name}} <code>{{.Job.Job.DatasetID}}</code></td></tr>
+    <tr><th>File</th><td><code>{{.Job.File.Path}}</code></td></tr>
+    <tr><th>Symbol</th><td>{{.Job.Job.Symbol}}</td></tr>
+    <tr><th>Speed</th><td>{{.Job.Job.Speed}}</td></tr>
+    <tr><th>Status</th><td>{{.Job.Job.Status}}</td></tr>
+    <tr><th>checkpoint</th><td>{{.Job.Job.CheckpointLine}}</td></tr>
+    <tr><th>Last error</th><td>{{.Job.Job.LastError}}</td></tr>
+  </tbody>
+</table>
+
+<h2>Metrics</h2>
+{{if .Job.Metrics}}
+<table>
+  <thead><tr><th>rows</th><th>events</th><th>malformed</th><th>gaps</th><th>rows/sec</th><th>events/sec</th><th>p95 latency</th><th>allocs/event</th></tr></thead>
+  <tbody>{{range .Job.Metrics}}<tr><td>{{.Rows}}</td><td>{{.Events}}</td><td>{{.MalformedEvents}}</td><td>{{.SequenceGaps}}</td><td>{{printf "%.2f" .RowsPerSecond}}</td><td>{{printf "%.2f" .EventsPerSecond}}</td><td>{{printf "%.2f ms" (millis .P95Latency)}}</td><td>{{printf "%.2f" .AllocsPerEvent}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="empty">No metrics recorded for this job.</p>{{end}}
+
+<h2>Validation Errors</h2>
+{{if .Job.Errors}}
+<table>
+  <thead><tr><th>line</th><th>symbol</th><th>type</th><th>message</th></tr></thead>
+  <tbody>{{range .Job.Errors}}<tr><td>{{.Line}}</td><td>{{.Symbol}}</td><td>{{.Type}}</td><td>{{.Message}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="empty">No validation errors recorded for this job.</p>{{end}}
+{{template "footer" .}}

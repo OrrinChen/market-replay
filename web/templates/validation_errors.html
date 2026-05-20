@@ -1,0 +1,13 @@
+{{template "header" .}}
+<h1>Validation Errors</h1>
+{{if .Errors}}
+<table>
+  <thead><tr><th>Job</th><th>Line</th><th>Symbol</th><th>Type</th><th>Message</th><th>Created</th></tr></thead>
+  <tbody>
+  {{range .Errors}}
+    <tr><td><a href="/dashboard/jobs/{{.Job.ID}}"><code>{{.Job.ID}}</code></a></td><td>{{.Error.Line}}</td><td>{{.Error.Symbol}}</td><td>{{.Error.Type}}</td><td>{{.Error.Message}}</td><td>{{.Error.CreatedAt.Format "2006-01-02 15:04:05"}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="empty">No validation errors recorded.</p>{{end}}
+{{template "footer" .}}

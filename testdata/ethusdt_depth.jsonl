@@ -1,0 +1,4 @@
+{"event_type":"depth","symbol":"ETHUSDT","event_time":1710000000500,"first_update_id":2001,"final_update_id":2002,"bids":[["3590.10","4.200"],["3589.80","7.500"]],"asks":[["3590.70","3.100"],["3591.20","5.000"]]}
+{"event_type":"depth","symbol":"ETHUSDT","event_time":1710000000600,"first_update_id":2003,"final_update_id":2004,"bids":[["3590.20","4.000"],["3589.70","7.250"]],"asks":[["3590.80","3.000"],["3591.30","4.800"]]}
+{"event_type":"depth","symbol":"ETHUSDT","event_time":1710000000700,"first_update_id":2005,"final_update_id":2006,"bids":[["3590.30","3.800"],["3589.60","7.000"]],"asks":[["3590.90","2.900"],["3591.40","4.600"]]}
+{"event_type":"depth","symbol":"ETHUSDT","event_time":1710000000800,"first_update_id":2007,"final_update_id":2008,"bids":[["3590.40","3.600"],["3589.50","6.750"]],"asks":[["3591.00","2.800"],["3591.50","4.400"]]}

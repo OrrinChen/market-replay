@@ -1,0 +1,16 @@
+{{template "header" .}}
+<h1>Benchmark Report</h1>
+<section class="summary">
+  <div>Average rows/sec<strong>{{printf "%.2f" .Summary.RowsPerSecond}}</strong></div>
+  <div>Average events/sec<strong>{{printf "%.2f" .Summary.EventsPerSecond}}</strong></div>
+  <div>Average p95 latency<strong>{{printf "%.2f ms" .Summary.AverageP95Millis}}</strong></div>
+  <div>Peak alloc MB<strong>{{printf "%.2f" .Summary.PeakAllocMB}}</strong></div>
+  <div>allocs/event<strong>{{range .Metrics}}{{printf "%.2f" .Metric.AllocsPerEvent}}{{else}}0.00{{end}}</strong></div>
+</section>
+{{if .Metrics}}
+<table>
+  <thead><tr><th>Job</th><th>rows/sec</th><th>events/sec</th><th>p95 latency</th><th>peak alloc MB</th><th>allocs/event</th><th>malformed</th><th>gaps</th></tr></thead>
+  <tbody>{{range .Metrics}}<tr><td><a href="/dashboard/jobs/{{.Job.ID}}"><code>{{.Job.ID}}</code></a></td><td>{{printf "%.2f" .Metric.RowsPerSecond}}</td><td>{{printf "%.2f" .Metric.EventsPerSecond}}</td><td>{{printf "%.2f ms" (millis .Metric.P95Latency)}}</td><td>{{printf "%.2f" (bytesMB .Metric.PeakAllocBytes)}}</td><td>{{printf "%.2f" .Metric.AllocsPerEvent}}</td><td>{{.Metric.MalformedEvents}}</td><td>{{.Metric.SequenceGaps}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="empty">No benchmark metrics recorded.</p>{{end}}
+{{template "footer" .}}

@@ -1,0 +1,21 @@
+{{template "header" .}}
+<h1>Replay Jobs</h1>
+{{if .Jobs}}
+<table>
+  <thead><tr><th>Job</th><th>Dataset</th><th>File</th><th>Symbol</th><th>Speed</th><th>Status</th><th>checkpoint</th></tr></thead>
+  <tbody>
+  {{range .Jobs}}
+    <tr>
+      <td><a href="/dashboard/jobs/{{.Job.ID}}"><code>{{.Job.ID}}</code></a></td>
+      <td>{{.Dataset}}</td>
+      <td><code>{{.File}}</code></td>
+      <td>{{.Job.Symbol}}</td>
+      <td>{{.Job.Speed}}</td>
+      <td>{{.Job.Status}}</td>
+      <td>{{.Job.CheckpointLine}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="empty">No replay jobs have been submitted.</p>{{end}}
+{{template "footer" .}}

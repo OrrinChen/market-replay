@@ -1,0 +1,6 @@
+event_type,symbol,trade_id,price,quantity,trade_time,is_buyer_maker
+aggTrade,SOLUSDT,9001,148.1200,12.50,1710000001000,true
+aggTrade,SOLUSDT,9002,148.1300,8.75,1710000001100,false
+aggTrade,SOLUSDT,9003,148.1250,4.20,1710000001200,true
+aggTrade,SOLUSDT,9004,148.1400,15.00,1710000001300,false
+aggTrade,SOLUSDT,9005,148.1350,6.40,1710000001400,true

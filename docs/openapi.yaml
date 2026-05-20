@@ -1,0 +1,346 @@
+openapi: 3.0.3
+info:
+  title: Market Replay Service API
+  version: 0.2.0
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /datasets:
+    post:
+      summary: Create a dataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDatasetRequest"
+      responses:
+        "201":
+          description: Created dataset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dataset"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+    get:
+      summary: List datasets
+      responses:
+        "200":
+          description: Datasets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Dataset"
+  /event-files:
+    post:
+      summary: Register an event file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventFileRequest"
+      responses:
+        "201":
+          description: Created event file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventFile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /replay-jobs:
+    post:
+      summary: Create a replay job
+      description: Returns the existing job with HTTP 200 when idempotency_key duplicates a prior request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReplayJobRequest"
+      responses:
+        "201":
+          description: Created replay job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayJob"
+        "200":
+          description: Existing replay job for duplicate idempotency key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayJob"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /replay-jobs/{id}:
+    get:
+      summary: Get a replay job
+      parameters:
+        - $ref: "#/components/parameters/ReplayJobID"
+      responses:
+        "200":
+          description: Replay job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /replay-jobs/{id}/metrics:
+    get:
+      summary: List replay metrics for a job
+      parameters:
+        - $ref: "#/components/parameters/ReplayJobID"
+      responses:
+        "200":
+          description: Replay metrics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReplayMetric"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /replay-jobs/{id}/errors:
+    get:
+      summary: List validation errors for a job
+      parameters:
+        - $ref: "#/components/parameters/ReplayJobID"
+      responses:
+        "200":
+          description: Validation errors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /replay-jobs/{id}/cancel:
+    post:
+      summary: Cancel a replay job
+      parameters:
+        - $ref: "#/components/parameters/ReplayJobID"
+      responses:
+        "200":
+          description: Canceled replay job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayJob"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  parameters:
+    ReplayJobID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+    CreateDatasetRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    Dataset:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateEventFileRequest:
+      type: object
+      required: [dataset_id, path, format]
+      properties:
+        dataset_id:
+          type: string
+        path:
+          type: string
+        format:
+          type: string
+        symbol:
+          type: string
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+    EventFile:
+      allOf:
+        - $ref: "#/components/schemas/CreateEventFileRequest"
+        - type: object
+          required: [id, created_at]
+          properties:
+            id:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+    CreateReplayJobRequest:
+      type: object
+      required: [dataset_id, event_file_id, speed]
+      properties:
+        dataset_id:
+          type: string
+        event_file_id:
+          type: string
+        idempotency_key:
+          type: string
+        symbol:
+          type: string
+        speed:
+          type: string
+    ReplayJob:
+      type: object
+      required: [id, dataset_id, event_file_id, speed, status, attempts, checkpoint_line, created_at]
+      properties:
+        id:
+          type: string
+        dataset_id:
+          type: string
+        event_file_id:
+          type: string
+        idempotency_key:
+          type: string
+        symbol:
+          type: string
+        speed:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed, canceled, dlq]
+        attempts:
+          type: integer
+        last_error:
+          type: string
+        checkpoint_line:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        canceled_at:
+          type: string
+          format: date-time
+          nullable: true
+    ReplayMetric:
+      type: object
+      properties:
+        id:
+          type: string
+        job_id:
+          type: string
+        rows:
+          type: integer
+          format: int64
+        events:
+          type: integer
+          format: int64
+        malformed_events:
+          type: integer
+          format: int64
+        sequence_gaps:
+          type: integer
+          format: int64
+        duration:
+          type: integer
+          format: int64
+          description: Go duration encoded as nanoseconds.
+        rows_per_second:
+          type: number
+        events_per_second:
+          type: number
+        p95_latency:
+          type: integer
+          format: int64
+          description: Go duration encoded as nanoseconds.
+        peak_alloc_bytes:
+          type: integer
+          format: int64
+        allocs_per_event:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+    ValidationError:
+      type: object
+      properties:
+        id:
+          type: string
+        job_id:
+          type: string
+        line:
+          type: integer
+          format: int64
+        symbol:
+          type: string
+        type:
+          type: string
+        message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
