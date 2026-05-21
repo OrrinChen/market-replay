@@ -10,6 +10,21 @@
     <tr><th>Status</th><td>{{.Job.Job.Status}}</td></tr>
     <tr><th>checkpoint</th><td>{{.Job.Job.CheckpointLine}}</td></tr>
     <tr><th>Last error</th><td>{{.Job.Job.LastError}}</td></tr>
+    <tr><th>Exports</th><td><a href="/replay-jobs/{{.Job.Job.ID}}/report">quality report JSON</a> · <a href="/replay-jobs/{{.Job.Job.ID}}/report.csv">quality report CSV</a></td></tr>
+  </tbody>
+</table>
+
+<h2>Replay Manifest</h2>
+<table>
+  <tbody>
+    <tr><th>input hash</th><td><code>{{.Job.Job.Manifest.InputFileSHA256}}</code></td></tr>
+    <tr><th>input rows</th><td>{{.Job.Job.Manifest.InputRows}}</td></tr>
+    <tr><th>input bytes</th><td>{{.Job.Job.Manifest.InputBytes}}</td></tr>
+    <tr><th>app version</th><td>{{.Job.Job.Manifest.AppVersion}}</td></tr>
+    <tr><th>resume from line</th><td>{{.Job.Job.Manifest.ResumeFromLine}}</td></tr>
+    <tr><th>checkpoint line</th><td>{{.Job.Job.Manifest.CheckpointLine}}</td></tr>
+    <tr><th>error count</th><td>{{.Job.Job.Manifest.ErrorCount}}</td></tr>
+    <tr><th>duration</th><td>{{.Job.Job.Manifest.Duration}}</td></tr>
   </tbody>
 </table>
 

@@ -4,8 +4,8 @@
 
 | Layer | Command | Purpose |
 | --- | --- | --- |
-| Unit tests | `make GO=.tools/go/bin/go test` | Parser, validator, replay, benchmark, store, API, worker, Kafka interfaces, observability, and dashboard package behavior. |
-| Dashboard rendering | `CGO_ENABLED=0 .tools/go/bin/go test ./internal/dashboard` | HTML handlers render repository-backed pages using the memory store. |
+| Unit tests | `make GO=.tools/go/bin/go test` | Parser, validator, replay, benchmark, store, API, worker, Kafka interfaces, observability, governance reports, and dashboard package behavior. |
+| Dashboard rendering | `CGO_ENABLED=0 .tools/go/bin/go test ./internal/dashboard` | HTML handlers render repository-backed pages, lineage, manifests, error summaries, and report links using the memory store. |
 | Fixture validation smoke | `make GO=.tools/go/bin/go validate-fixtures` | Confirms committed fixtures retain expected malformed/gap behavior. |
 | Benchmark smoke | `make GO=.tools/go/bin/go bench` | Confirms benchmark command emits required metrics for representative fixtures. |
 | Postgres + Redis integration | `make GO=.tools/go/bin/go test-integration` | Runs env-gated integration scaffolding against real Postgres and Redis/Asynq when `DATABASE_URL` and/or `REDIS_ADDR` are set. |
@@ -17,7 +17,7 @@
 
 ## Dashboard Test Expectations
 
-The dashboard package should remain server-rendered and repository-driven. Tests should seed `store.NewMemoryRepository()` with datasets, event files, jobs, metrics, and validation errors, then assert visible HTML content through `httptest`.
+The dashboard package should remain server-rendered and repository-driven. Tests should seed `store.NewMemoryRepository()` with datasets, event files, jobs, manifests, metrics, and validation errors, then assert visible HTML content through `httptest`.
 
 ## Integration Test Scaffolding
 
@@ -28,7 +28,7 @@ Ordinary `make GO=.tools/go/bin/go test` must not require Docker, image pulls, o
 - Postgres + Redis together: `DATABASE_URL=postgres://postgres:postgres@localhost:5432/market_replay?sslmode=disable REDIS_ADDR=localhost:6379 make GO=.tools/go/bin/go test-integration`
 - Kafka/Redpanda: `KAFKA_BROKERS=localhost:9092 make GO=.tools/go/bin/go test-integration-kafka`
 
-The Postgres test creates and drops an isolated temporary schema, calls `EnsurePostgresSchema`, verifies the expected repository tables exist, and exercises dataset/event-file/replay-job create/list/get plus idempotent replay-job creation and completion metrics/errors.
+The Postgres test creates and drops an isolated temporary schema, calls `EnsurePostgresSchema`, verifies the expected repository tables exist, and exercises dataset/event-file/replay-job create/list/get plus idempotent replay-job creation, manifest persistence, lineage/report builders, and completion metrics/errors.
 
 The Redis/Asynq test enqueues a replay task into a unique queue with deterministic TaskID/Unique options and verifies the second enqueue is rejected by Asynq duplicate protection. It does not require a worker process.
 
@@ -57,7 +57,7 @@ The Compose-backed Postgres/Redis integration and Redpanda/Kafka integration pas
 
 ## Verification Rules
 
-- Use `CGO_ENABLED=0` or the Makefile defaults for Go test commands in this workspace.
+- Use `CGO_ENABLED=0` or the Makefile defaults for ordinary Go test commands. On macOS 26 with the bundled Go 1.22.5 runtime, use `CGO_ENABLED=1 .tools/go/bin/go test -ldflags=-linkmode=external ./...` to avoid local `dyld` test-binary loading failures.
 - Keep generated workloads and benchmark outputs out of git unless a later phase explicitly adds reproducible artifacts.
 - Do not treat benchmark timing as a fixed pass/fail threshold until a stable machine baseline is documented.
 - Keep live trading, automatic trading, and exchange connectivity out of test names and assertions.

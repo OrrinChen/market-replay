@@ -1,5 +1,18 @@
 {{template "header" .}}
 <h1>Validation Errors</h1>
+<h2>By type / file / symbol / day</h2>
+{{if .ErrorSummary}}
+<table>
+  <thead><tr><th>Type</th><th>File</th><th>Symbol</th><th>Day</th><th>Count</th><th>Line range</th></tr></thead>
+  <tbody>
+  {{range .ErrorSummary}}
+    <tr><td>{{.Type}}</td><td><code>{{.FilePath}}</code></td><td>{{.Symbol}}</td><td>{{.Day}}</td><td>{{.Count}}</td><td>{{.FirstLine}}-{{.LastLine}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="empty">No validation error summary available.</p>{{end}}
+
+<h2>Details</h2>
 {{if .Errors}}
 <table>
   <thead><tr><th>Job</th><th>Line</th><th>Symbol</th><th>Type</th><th>Message</th><th>Created</th></tr></thead>

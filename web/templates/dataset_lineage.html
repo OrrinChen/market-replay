@@ -1,0 +1,36 @@
+{{template "header" .}}
+<h1>Dataset Lineage</h1>
+<table>
+  <tbody>
+    <tr><th>Dataset</th><td>{{.Lineage.Dataset.Name}} <code>{{.Lineage.Dataset.ID}}</code></td></tr>
+    <tr><th>Description</th><td>{{.Lineage.Dataset.Description}}</td></tr>
+    <tr><th>Generated</th><td>{{.Lineage.GeneratedAt.Format "2006-01-02 15:04:05"}}</td></tr>
+  </tbody>
+</table>
+
+{{if .Lineage.EventFiles}}
+{{range .Lineage.EventFiles}}
+<h2>event file</h2>
+<table>
+  <tbody>
+    <tr><th>File</th><td><code>{{.EventFile.Path}}</code></td></tr>
+    <tr><th>Symbol</th><td>{{.EventFile.Symbol}}</td></tr>
+    <tr><th>Format</th><td>{{.EventFile.Format}}</td></tr>
+    <tr><th>Rows</th><td>{{.EventFile.Rows}}</td></tr>
+    <tr><th>Bytes</th><td>{{.EventFile.Bytes}}</td></tr>
+    <tr><th>SHA256</th><td><code>{{.EventFile.SHA256}}</code></td></tr>
+  </tbody>
+</table>
+{{if .Jobs}}
+<table>
+  <thead><tr><th>Replay job</th><th>Status</th><th>checkpoint</th><th>metrics</th><th>validation errors</th><th>error types</th><th>manifest hash</th></tr></thead>
+  <tbody>
+  {{range .Jobs}}
+    <tr><td><a href="/dashboard/jobs/{{.Job.ID}}"><code>{{.Job.ID}}</code></a></td><td>{{.Job.Status}}</td><td>{{.Job.CheckpointLine}}</td><td>{{.MetricCount}}</td><td>{{.ErrorCount}}</td><td>{{range .ErrorTypes}}<div>{{.}}</div>{{end}}</td><td><code>{{.Job.Manifest.InputFileSHA256}}</code></td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}<p class="empty">No replay jobs recorded for this event file.</p>{{end}}
+{{end}}
+{{else}}<p class="empty">No event files registered for this dataset.</p>{{end}}
+{{template "footer" .}}

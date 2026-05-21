@@ -23,11 +23,14 @@ type Querier interface {
 	GetReplayJob(ctx context.Context, id string) (GetReplayJobRow, error)
 	GetReplayJobByIdempotencyKey(ctx context.Context, idempotencyKey pgtype.Text) (GetReplayJobByIdempotencyKeyRow, error)
 	ListDatasets(ctx context.Context) ([]Dataset, error)
+	ListEventFiles(ctx context.Context, datasetID string) ([]EventFile, error)
 	ListReplayJobs(ctx context.Context) ([]ListReplayJobsRow, error)
 	ListReplayMetrics(ctx context.Context, jobID string) ([]ReplayMetric, error)
 	ListValidationErrors(ctx context.Context, jobID string) ([]ValidationError, error)
+	UpdateEventFileStats(ctx context.Context, arg UpdateEventFileStatsParams) (EventFile, error)
 	UpdateReplayCheckpoint(ctx context.Context, arg UpdateReplayCheckpointParams) (int64, error)
 	UpdateReplayJobStatus(ctx context.Context, arg UpdateReplayJobStatusParams) (UpdateReplayJobStatusRow, error)
+	UpdateReplayManifest(ctx context.Context, arg UpdateReplayManifestParams) (UpdateReplayManifestRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

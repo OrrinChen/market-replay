@@ -2,14 +2,15 @@
 <h1>Datasets</h1>
 {{if .Datasets}}
 <table>
-  <thead><tr><th>Name</th><th>Description</th><th>Created</th><th>Known files</th></tr></thead>
+  <thead><tr><th>Name</th><th>Description</th><th>Created</th><th>Known files</th><th>Lineage</th></tr></thead>
   <tbody>
   {{range .Datasets}}
     <tr>
       <td><code>{{.Dataset.ID}}</code><br>{{.Dataset.Name}}</td>
       <td>{{.Dataset.Description}}</td>
       <td>{{.Dataset.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
-      <td>{{range .Files}}<div>{{.Symbol}} {{.Format}} <code>{{.Path}}</code></div>{{else}}<span class="muted">No replay files referenced yet</span>{{end}}</td>
+      <td>{{range .Files}}<div>{{.Symbol}} {{.Format}} <code>{{.Path}}</code> {{if .SHA256}}<span class="muted">{{printf "%.12s" .SHA256}}</span>{{end}}</div>{{else}}<span class="muted">No replay files registered yet</span>{{end}}</td>
+      <td><a href="/dashboard/datasets/{{.Dataset.ID}}/lineage">lineage</a></td>
     </tr>
   {{end}}
   </tbody>

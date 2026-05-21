@@ -21,10 +21,11 @@ func TestDashboardRendersCorePagesFromMemoryStore(t *testing.T) {
 		path string
 		want []string
 	}{
-		{path: "/dashboard/datasets", want: []string{"Datasets", "BTC depth fixture", "BTCUSDT"}},
+		{path: "/dashboard/datasets", want: []string{"Datasets", "BTC depth fixture", "BTCUSDT", "lineage"}},
+		{path: "/dashboard/datasets/" + job.DatasetID + "/lineage", want: []string{"Dataset Lineage", "event file", job.ID, "sequence_gap"}},
 		{path: "/dashboard/jobs", want: []string{"Replay Jobs", job.ID, "completed"}},
-		{path: "/dashboard/jobs/" + job.ID, want: []string{"Job Detail", "checkpoint", "sequence_gap"}},
-		{path: "/dashboard/validation-errors", want: []string{"Validation Errors", "sequence_gap", "gap between update ids"}},
+		{path: "/dashboard/jobs/" + job.ID, want: []string{"Job Detail", "checkpoint", "sequence_gap", "Replay Manifest", "quality report JSON", "quality report CSV"}},
+		{path: "/dashboard/validation-errors", want: []string{"Validation Errors", "sequence_gap", "gap between update ids", "By type / file / symbol / day"}},
 		{path: "/dashboard/metrics", want: []string{"Metrics Summary", "rows/sec", "events/sec", "1000.00"}},
 		{path: "/dashboard/benchmark", want: []string{"Benchmark Report", "p95 latency", "allocs/event"}},
 	}
@@ -77,6 +78,8 @@ func seedDashboardRepository(t *testing.T, ctx context.Context, repo *store.Memo
 		Format:    "jsonl",
 		Symbol:    "BTCUSDT",
 		Bytes:     4096,
+		SHA256:    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Rows:      100,
 	})
 	if err != nil {
 		t.Fatalf("CreateEventFile returned error: %v", err)
@@ -93,6 +96,18 @@ func seedDashboardRepository(t *testing.T, ctx context.Context, repo *store.Memo
 	}
 	if err := repo.UpdateReplayCheckpoint(ctx, job.ID, 128); err != nil {
 		t.Fatalf("UpdateReplayCheckpoint returned error: %v", err)
+	}
+	if _, err := repo.UpdateReplayManifest(ctx, job.ID, store.ReplayManifest{
+		InputFileSHA256: file.SHA256,
+		InputRows:       100,
+		InputBytes:      4096,
+		AppVersion:      "test",
+		CheckpointLine:  128,
+		ErrorCount:      1,
+		SequenceGaps:    1,
+		Duration:        100 * time.Millisecond,
+	}); err != nil {
+		t.Fatalf("UpdateReplayManifest returned error: %v", err)
 	}
 	completed, err := repo.CompleteReplayJob(ctx, job.ID, store.CompleteReplayJobParams{
 		Metric: store.ReplayMetric{

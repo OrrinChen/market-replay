@@ -76,6 +76,8 @@ func (r *MemoryRepository) CreateEventFile(_ context.Context, params CreateEvent
 		Format:    params.Format,
 		Symbol:    params.Symbol,
 		Bytes:     params.Bytes,
+		SHA256:    params.SHA256,
+		Rows:      params.Rows,
 		CreatedAt: time.Now().UTC(),
 	}
 	r.eventFiles[file.ID] = file
@@ -89,6 +91,42 @@ func (r *MemoryRepository) GetEventFile(_ context.Context, id string) (EventFile
 	if !ok {
 		return EventFile{}, ErrNotFound
 	}
+	return file, nil
+}
+
+func (r *MemoryRepository) ListEventFiles(_ context.Context, datasetID string) ([]EventFile, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, ok := r.datasets[datasetID]; !ok {
+		return nil, ErrNotFound
+	}
+	items := make([]EventFile, 0)
+	for _, file := range r.eventFiles {
+		if file.DatasetID == datasetID {
+			items = append(items, file)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.Before(items[j].CreatedAt) })
+	return items, nil
+}
+
+func (r *MemoryRepository) UpdateEventFileStats(_ context.Context, id string, params UpdateEventFileStatsParams) (EventFile, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	file, ok := r.eventFiles[id]
+	if !ok {
+		return EventFile{}, ErrNotFound
+	}
+	if params.SHA256 != "" {
+		file.SHA256 = params.SHA256
+	}
+	if params.Rows >= 0 {
+		file.Rows = params.Rows
+	}
+	if params.Bytes >= 0 {
+		file.Bytes = params.Bytes
+	}
+	r.eventFiles[id] = file
 	return file, nil
 }
 
@@ -193,6 +231,18 @@ func (r *MemoryRepository) UpdateReplayCheckpoint(_ context.Context, id string, 
 		r.jobs[id] = job
 	}
 	return nil
+}
+
+func (r *MemoryRepository) UpdateReplayManifest(_ context.Context, id string, manifest ReplayManifest) (ReplayJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.jobs[id]
+	if !ok {
+		return ReplayJob{}, ErrNotFound
+	}
+	job.Manifest = manifest
+	r.jobs[id] = job
+	return job, nil
 }
 
 func (r *MemoryRepository) CompleteReplayJob(_ context.Context, jobID string, params CompleteReplayJobParams) (ReplayJob, error) {

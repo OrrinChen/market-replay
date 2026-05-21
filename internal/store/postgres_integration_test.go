@@ -93,12 +93,23 @@ func TestPostgresRepositoryIntegrationSchemaAndReplayJobLifecycle(t *testing.T) 
 		Format:    "jsonl",
 		Symbol:    "BTCUSDT",
 		Bytes:     128,
+		SHA256:    strings.Repeat("c", 64),
+		Rows:      2,
 	})
 	if err != nil {
 		t.Fatalf("CreateEventFile returned error: %v", err)
 	}
-	if _, err := repo.GetEventFile(ctx, file.ID); err != nil {
+	if gotFile, err := repo.GetEventFile(ctx, file.ID); err != nil {
 		t.Fatalf("GetEventFile returned error: %v", err)
+	} else if gotFile.SHA256 != strings.Repeat("c", 64) || gotFile.Rows != 2 {
+		t.Fatalf("GetEventFile = %#v, want governance file stats", gotFile)
+	}
+	files, err := repo.ListEventFiles(ctx, dataset.ID)
+	if err != nil {
+		t.Fatalf("ListEventFiles returned error: %v", err)
+	}
+	if len(files) != 1 || files[0].ID != file.ID {
+		t.Fatalf("ListEventFiles = %#v, want created file", files)
 	}
 
 	params := CreateReplayJobParams{
@@ -132,6 +143,27 @@ func TestPostgresRepositoryIntegrationSchemaAndReplayJobLifecycle(t *testing.T) 
 	}
 	if len(jobs) != 1 || jobs[0].ID != job.ID {
 		t.Fatalf("ListReplayJobs = %#v, want created job only", jobs)
+	}
+	if _, err := repo.UpdateEventFileStats(ctx, file.ID, UpdateEventFileStatsParams{
+		SHA256: strings.Repeat("d", 64),
+		Rows:   4,
+		Bytes:  256,
+	}); err != nil {
+		t.Fatalf("UpdateEventFileStats returned error: %v", err)
+	}
+	manifest := ReplayManifest{
+		InputFileSHA256: strings.Repeat("d", 64),
+		InputRows:       4,
+		InputBytes:      256,
+		AppVersion:      "integration-test",
+		CheckpointLine:  4,
+		ErrorCount:      1,
+		SequenceGaps:    1,
+	}
+	if updatedJob, err := repo.UpdateReplayManifest(ctx, job.ID, manifest); err != nil {
+		t.Fatalf("UpdateReplayManifest returned error: %v", err)
+	} else if updatedJob.Manifest.InputRows != 4 || updatedJob.Manifest.AppVersion != "integration-test" {
+		t.Fatalf("UpdateReplayManifest job = %#v, want manifest fields", updatedJob)
 	}
 
 	completed, err := repo.CompleteReplayJob(ctx, job.ID, CompleteReplayJobParams{
@@ -172,5 +204,19 @@ func TestPostgresRepositoryIntegrationSchemaAndReplayJobLifecycle(t *testing.T) 
 	}
 	if len(validationErrors) != 1 || validationErrors[0].Line != 2 {
 		t.Fatalf("validation errors = %#v, want one line 2 error", validationErrors)
+	}
+	lineage, err := BuildDatasetLineage(ctx, repo, dataset.ID)
+	if err != nil {
+		t.Fatalf("BuildDatasetLineage returned error: %v", err)
+	}
+	if len(lineage.EventFiles) != 1 || len(lineage.EventFiles[0].Jobs) != 1 || lineage.EventFiles[0].Jobs[0].ErrorCount != 1 {
+		t.Fatalf("lineage = %#v, want file, job, and error count", lineage)
+	}
+	report, err := BuildReplayQualityReport(ctx, repo, job.ID)
+	if err != nil {
+		t.Fatalf("BuildReplayQualityReport returned error: %v", err)
+	}
+	if report.Job.Manifest.InputFileSHA256 != strings.Repeat("d", 64) || len(report.ErrorSummary) != 1 {
+		t.Fatalf("report = %#v, want manifest and error summary", report)
 	}
 }

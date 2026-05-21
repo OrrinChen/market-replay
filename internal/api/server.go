@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -41,12 +43,16 @@ func NewRouterWithOptions(repo store.Repository, opts Options) http.Handler {
 	router.GET("/healthz", server.healthz)
 	router.POST("/datasets", server.createDataset)
 	router.GET("/datasets", server.listDatasets)
+	router.GET("/datasets/:id/lineage", server.getDatasetLineage)
 	router.POST("/event-files", server.createEventFile)
 	router.POST("/replay-jobs", server.createReplayJob)
+	router.GET("/replay-jobs/:id/report", server.getReplayQualityReport)
+	router.GET("/replay-jobs/:id/report.csv", server.getReplayQualityReportCSV)
 	router.GET("/replay-jobs/:id", server.getReplayJob)
 	router.GET("/replay-jobs/:id/metrics", server.listReplayMetrics)
 	router.GET("/replay-jobs/:id/errors", server.listValidationErrors)
 	router.POST("/replay-jobs/:id/cancel", server.cancelReplayJob)
+	router.GET("/validation-errors/summary", server.listValidationErrorSummary)
 
 	return router
 }
@@ -109,6 +115,11 @@ func (s *Server) createEventFile(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "invalid_request", "bytes must be greater than or equal to zero")
 		return
 	}
+	req.SHA256 = strings.TrimSpace(req.SHA256)
+	if req.Rows < 0 {
+		writeError(c, http.StatusBadRequest, "invalid_request", "rows must be greater than or equal to zero")
+		return
+	}
 
 	file, err := s.repo.CreateEventFile(c.Request.Context(), req)
 	if err != nil {
@@ -166,6 +177,56 @@ func (s *Server) getReplayJob(c *gin.Context) {
 	c.JSON(http.StatusOK, job)
 }
 
+func (s *Server) getDatasetLineage(c *gin.Context) {
+	lineage, err := store.BuildDatasetLineage(c.Request.Context(), s.repo, c.Param("id"))
+	if err != nil {
+		writeStoreError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, lineage)
+}
+
+func (s *Server) getReplayQualityReport(c *gin.Context) {
+	report, err := store.BuildReplayQualityReport(c.Request.Context(), s.repo, c.Param("id"))
+	if err != nil {
+		writeStoreError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, report)
+}
+
+func (s *Server) getReplayQualityReportCSV(c *gin.Context) {
+	report, err := store.BuildReplayQualityReport(c.Request.Context(), s.repo, c.Param("id"))
+	if err != nil {
+		writeStoreError(c, err)
+		return
+	}
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="`+report.Job.ID+`-quality-report.csv"`)
+	writer := csv.NewWriter(c.Writer)
+	if err := writer.Write([]string{"job_id", "line", "symbol", "type", "message", "created_at"}); err != nil {
+		writeError(c, http.StatusInternalServerError, "internal_error", "write csv report")
+		return
+	}
+	for _, validationError := range report.Errors {
+		if err := writer.Write([]string{
+			validationError.JobID,
+			strconv.FormatInt(validationError.Line, 10),
+			validationError.Symbol,
+			validationError.Type,
+			validationError.Message,
+			validationError.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		}); err != nil {
+			writeError(c, http.StatusInternalServerError, "internal_error", "write csv report")
+			return
+		}
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		writeError(c, http.StatusInternalServerError, "internal_error", "write csv report")
+	}
+}
+
 func (s *Server) listReplayMetrics(c *gin.Context) {
 	if _, ok := s.ensureJobExists(c); !ok {
 		return
@@ -188,6 +249,15 @@ func (s *Server) listValidationErrors(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, errs)
+}
+
+func (s *Server) listValidationErrorSummary(c *gin.Context) {
+	summary, err := store.BuildValidationErrorSummary(c.Request.Context(), s.repo)
+	if err != nil {
+		writeStoreError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, summary)
 }
 
 func (s *Server) cancelReplayJob(c *gin.Context) {

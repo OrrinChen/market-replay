@@ -11,7 +11,8 @@ The system is still bounded to historical market-data replay diagnostics and ben
 - Replay events in source order with timestamp-derived speed control according to `ReplayJob` settings.
 - Validate malformed rows, required fields, timestamp ordering, and depth update sequence continuity.
 - Emit validation results and replay metrics suitable for local benchmarks and service observability.
-- Persist dataset, event-file, job, validation-error, and metric metadata.
+- Persist dataset, event-file, job, validation-error, metric, manifest, and lineage metadata.
+- Export replay quality reports that tie input hashes, row counts, validation errors, and metrics back to the replay job.
 - Run asynchronous replay jobs through a Redis-backed control plane.
 - Publish historical file replay into Kafka-compatible topics for data-plane validation.
 
@@ -27,6 +28,8 @@ The system is still bounded to historical market-data replay diagnostics and ben
 flowchart LR
     File["Historical JSONL/CSV files"] --> Core["Go streaming parser / validator / replayer"]
     Core --> Metrics["Replay metrics and validation failures"]
+    Worker --> Manifest["Replay manifest and file hash"]
+    Manifest --> Postgres
     API["Gin API"] --> Postgres[("Postgres metadata/results")]
     API --> Redis[("Redis Asynq control plane")]
     Worker["Replay worker"] --> Redis
@@ -41,12 +44,22 @@ flowchart LR
 | Layer | Responsibility |
 | --- | --- |
 | Replay core | Stream files, parse events, validate malformed rows and sequence gaps, replay with speed control, and report benchmark metrics. |
-| HTTP API | Register datasets/event files, submit replay jobs, expose job state, metrics, validation errors, dashboard pages, pprof, and Prometheus metrics. |
-| Postgres | Durable source of truth for metadata, job state, checkpoints, validation errors, and replay metrics. |
+| HTTP API | Register datasets/event files, submit replay jobs, expose job state, metrics, validation errors, lineage, quality reports, dashboard pages, pprof, and Prometheus metrics. |
+| Postgres | Durable source of truth for metadata, job state, checkpoints, validation errors, replay metrics, file stats, and replay manifests. |
 | Redis/Asynq | Control-plane queue for asynchronous replay jobs, retries, timeout, idempotent dispatch, and DLQ/archive behavior. |
 | Kafka-compatible stream | Optional data-plane replay path that publishes historical events to symbol-keyed topics and consumes them for validation/error routing. |
 | Observability | Prometheus metrics, Grafana dashboard provisioning, Zap structured logs, and pprof endpoints. |
-| Dashboard | Small server-rendered HTML surface for interview/demo inspection; not a large frontend product. |
+| Dashboard | Small server-rendered HTML surface for interview/demo inspection, including lineage and validation-error distributions; not a large frontend product. |
+
+## Governance Model
+
+The P1 governance slice keeps data-quality evidence inside the existing Go/Postgres service boundary:
+
+```text
+dataset -> event_file(hash, rows, bytes) -> replay_job(manifest) -> validation_errors + replay_metrics -> quality report
+```
+
+The worker computes the input file SHA256, byte size, final row count, resume line, checkpoint line, validation-error count, malformed-event count, sequence-gap count, and replay duration when a job completes. The API then exposes that state through JSON lineage/report endpoints and a CSV validation-error export. This does not introduce a new data lake, frontend stack, or reporting worker.
 
 ## Phase 1 Core Model
 

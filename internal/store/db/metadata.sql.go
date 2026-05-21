@@ -17,7 +17,7 @@ SET status = 'canceled', canceled_at = $2
 WHERE id = $1
 RETURNING id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 `
 
 type CancelReplayJobParams struct {
@@ -40,6 +40,7 @@ type CancelReplayJobRow struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+	Manifest       []byte             `json:"manifest"`
 }
 
 func (q *Queries) CancelReplayJob(ctx context.Context, arg CancelReplayJobParams) (CancelReplayJobRow, error) {
@@ -60,6 +61,7 @@ func (q *Queries) CancelReplayJob(ctx context.Context, arg CancelReplayJobParams
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CanceledAt,
+		&i.Manifest,
 	)
 	return i, err
 }
@@ -108,9 +110,9 @@ func (q *Queries) CreateDataset(ctx context.Context, arg CreateDatasetParams) (D
 }
 
 const createEventFile = `-- name: CreateEventFile :one
-INSERT INTO event_files (id, dataset_id, path, format, symbol, bytes)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, dataset_id, path, format, symbol, bytes, created_at
+INSERT INTO event_files (id, dataset_id, path, format, symbol, bytes, sha256, rows)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, dataset_id, path, format, symbol, bytes, created_at, sha256, rows
 `
 
 type CreateEventFileParams struct {
@@ -120,6 +122,8 @@ type CreateEventFileParams struct {
 	Format    string `json:"format"`
 	Symbol    string `json:"symbol"`
 	Bytes     int64  `json:"bytes"`
+	Sha256    string `json:"sha256"`
+	Rows      int64  `json:"rows"`
 }
 
 func (q *Queries) CreateEventFile(ctx context.Context, arg CreateEventFileParams) (EventFile, error) {
@@ -130,6 +134,8 @@ func (q *Queries) CreateEventFile(ctx context.Context, arg CreateEventFileParams
 		arg.Format,
 		arg.Symbol,
 		arg.Bytes,
+		arg.Sha256,
+		arg.Rows,
 	)
 	var i EventFile
 	err := row.Scan(
@@ -140,6 +146,8 @@ func (q *Queries) CreateEventFile(ctx context.Context, arg CreateEventFileParams
 		&i.Symbol,
 		&i.Bytes,
 		&i.CreatedAt,
+		&i.Sha256,
+		&i.Rows,
 	)
 	return i, err
 }
@@ -149,7 +157,7 @@ INSERT INTO replay_jobs (id, dataset_id, event_file_id, idempotency_key, symbol,
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 `
 
 type CreateReplayJobParams struct {
@@ -177,6 +185,7 @@ type CreateReplayJobRow struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+	Manifest       []byte             `json:"manifest"`
 }
 
 func (q *Queries) CreateReplayJob(ctx context.Context, arg CreateReplayJobParams) (CreateReplayJobRow, error) {
@@ -205,6 +214,7 @@ func (q *Queries) CreateReplayJob(ctx context.Context, arg CreateReplayJobParams
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CanceledAt,
+		&i.Manifest,
 	)
 	return i, err
 }
@@ -330,7 +340,7 @@ func (q *Queries) GetDataset(ctx context.Context, id string) (Dataset, error) {
 }
 
 const getEventFile = `-- name: GetEventFile :one
-SELECT id, dataset_id, path, format, symbol, bytes, created_at
+SELECT id, dataset_id, path, format, symbol, bytes, created_at, sha256, rows
 FROM event_files
 WHERE id = $1
 `
@@ -346,6 +356,8 @@ func (q *Queries) GetEventFile(ctx context.Context, id string) (EventFile, error
 		&i.Symbol,
 		&i.Bytes,
 		&i.CreatedAt,
+		&i.Sha256,
+		&i.Rows,
 	)
 	return i, err
 }
@@ -353,7 +365,7 @@ func (q *Queries) GetEventFile(ctx context.Context, id string) (EventFile, error
 const getReplayJob = `-- name: GetReplayJob :one
 SELECT id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 FROM replay_jobs
 WHERE id = $1
 `
@@ -373,6 +385,7 @@ type GetReplayJobRow struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+	Manifest       []byte             `json:"manifest"`
 }
 
 func (q *Queries) GetReplayJob(ctx context.Context, id string) (GetReplayJobRow, error) {
@@ -393,6 +406,7 @@ func (q *Queries) GetReplayJob(ctx context.Context, id string) (GetReplayJobRow,
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CanceledAt,
+		&i.Manifest,
 	)
 	return i, err
 }
@@ -400,7 +414,7 @@ func (q *Queries) GetReplayJob(ctx context.Context, id string) (GetReplayJobRow,
 const getReplayJobByIdempotencyKey = `-- name: GetReplayJobByIdempotencyKey :one
 SELECT id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 FROM replay_jobs
 WHERE idempotency_key = $1
 `
@@ -420,6 +434,7 @@ type GetReplayJobByIdempotencyKeyRow struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+	Manifest       []byte             `json:"manifest"`
 }
 
 func (q *Queries) GetReplayJobByIdempotencyKey(ctx context.Context, idempotencyKey pgtype.Text) (GetReplayJobByIdempotencyKeyRow, error) {
@@ -440,6 +455,7 @@ func (q *Queries) GetReplayJobByIdempotencyKey(ctx context.Context, idempotencyK
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CanceledAt,
+		&i.Manifest,
 	)
 	return i, err
 }
@@ -475,10 +491,47 @@ func (q *Queries) ListDatasets(ctx context.Context) ([]Dataset, error) {
 	return items, nil
 }
 
+const listEventFiles = `-- name: ListEventFiles :many
+SELECT id, dataset_id, path, format, symbol, bytes, created_at, sha256, rows
+FROM event_files
+WHERE dataset_id = $1
+ORDER BY created_at ASC
+`
+
+func (q *Queries) ListEventFiles(ctx context.Context, datasetID string) ([]EventFile, error) {
+	rows, err := q.db.Query(ctx, listEventFiles, datasetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EventFile
+	for rows.Next() {
+		var i EventFile
+		if err := rows.Scan(
+			&i.ID,
+			&i.DatasetID,
+			&i.Path,
+			&i.Format,
+			&i.Symbol,
+			&i.Bytes,
+			&i.CreatedAt,
+			&i.Sha256,
+			&i.Rows,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReplayJobs = `-- name: ListReplayJobs :many
 SELECT id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 FROM replay_jobs
 ORDER BY created_at ASC
 `
@@ -498,6 +551,7 @@ type ListReplayJobsRow struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+	Manifest       []byte             `json:"manifest"`
 }
 
 func (q *Queries) ListReplayJobs(ctx context.Context) ([]ListReplayJobsRow, error) {
@@ -524,6 +578,7 @@ func (q *Queries) ListReplayJobs(ctx context.Context) ([]ListReplayJobsRow, erro
 			&i.StartedAt,
 			&i.CompletedAt,
 			&i.CanceledAt,
+			&i.Manifest,
 		); err != nil {
 			return nil, err
 		}
@@ -613,6 +668,44 @@ func (q *Queries) ListValidationErrors(ctx context.Context, jobID string) ([]Val
 	return items, nil
 }
 
+const updateEventFileStats = `-- name: UpdateEventFileStats :one
+UPDATE event_files
+SET sha256 = $2,
+    rows = $3,
+    bytes = $4
+WHERE id = $1
+RETURNING id, dataset_id, path, format, symbol, bytes, created_at, sha256, rows
+`
+
+type UpdateEventFileStatsParams struct {
+	ID     string `json:"id"`
+	Sha256 string `json:"sha256"`
+	Rows   int64  `json:"rows"`
+	Bytes  int64  `json:"bytes"`
+}
+
+func (q *Queries) UpdateEventFileStats(ctx context.Context, arg UpdateEventFileStatsParams) (EventFile, error) {
+	row := q.db.QueryRow(ctx, updateEventFileStats,
+		arg.ID,
+		arg.Sha256,
+		arg.Rows,
+		arg.Bytes,
+	)
+	var i EventFile
+	err := row.Scan(
+		&i.ID,
+		&i.DatasetID,
+		&i.Path,
+		&i.Format,
+		&i.Symbol,
+		&i.Bytes,
+		&i.CreatedAt,
+		&i.Sha256,
+		&i.Rows,
+	)
+	return i, err
+}
+
 const updateReplayCheckpoint = `-- name: UpdateReplayCheckpoint :execrows
 UPDATE replay_jobs
 SET checkpoint_line = GREATEST(checkpoint_line, $2)
@@ -643,7 +736,7 @@ SET status = $2,
 WHERE id = $1
 RETURNING id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 `
 
 type UpdateReplayJobStatusParams struct {
@@ -668,6 +761,7 @@ type UpdateReplayJobStatusRow struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+	Manifest       []byte             `json:"manifest"`
 }
 
 func (q *Queries) UpdateReplayJobStatus(ctx context.Context, arg UpdateReplayJobStatusParams) (UpdateReplayJobStatusRow, error) {
@@ -693,6 +787,62 @@ func (q *Queries) UpdateReplayJobStatus(ctx context.Context, arg UpdateReplayJob
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CanceledAt,
+		&i.Manifest,
+	)
+	return i, err
+}
+
+const updateReplayManifest = `-- name: UpdateReplayManifest :one
+UPDATE replay_jobs
+SET manifest = $2
+WHERE id = $1
+RETURNING id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
+    symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
+    started_at, completed_at, canceled_at, manifest
+`
+
+type UpdateReplayManifestParams struct {
+	ID       string `json:"id"`
+	Manifest []byte `json:"manifest"`
+}
+
+type UpdateReplayManifestRow struct {
+	ID             string             `json:"id"`
+	DatasetID      string             `json:"dataset_id"`
+	EventFileID    string             `json:"event_file_id"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Symbol         string             `json:"symbol"`
+	Speed          string             `json:"speed"`
+	Status         string             `json:"status"`
+	Attempts       int32              `json:"attempts"`
+	LastError      string             `json:"last_error"`
+	CheckpointLine int64              `json:"checkpoint_line"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+	Manifest       []byte             `json:"manifest"`
+}
+
+func (q *Queries) UpdateReplayManifest(ctx context.Context, arg UpdateReplayManifestParams) (UpdateReplayManifestRow, error) {
+	row := q.db.QueryRow(ctx, updateReplayManifest, arg.ID, arg.Manifest)
+	var i UpdateReplayManifestRow
+	err := row.Scan(
+		&i.ID,
+		&i.DatasetID,
+		&i.EventFileID,
+		&i.IdempotencyKey,
+		&i.Symbol,
+		&i.Speed,
+		&i.Status,
+		&i.Attempts,
+		&i.LastError,
+		&i.CheckpointLine,
+		&i.CreatedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.CanceledAt,
+		&i.Manifest,
 	)
 	return i, err
 }

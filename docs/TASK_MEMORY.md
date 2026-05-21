@@ -69,6 +69,17 @@ Supervisor integration updates:
 - Redpanda exposes separate Kafka listeners for compose-internal clients (`redpanda:9092`) and host-side CLI clients (`localhost:9092`).
 - Worker retry now performs line-based logical resume: checkpointed rows prime validator state, while metrics and validation errors are emitted only for rows after `checkpoint_line`.
 
+P1 data-governance extension:
+
+- `event_files` now records input `sha256` and `rows` alongside byte size, path, format, and symbol.
+- `replay_jobs` now carries a `ReplayManifest` with input hash, rows, bytes, app version, resume line, checkpoint line, duration, malformed count, sequence-gap count, and validation-error count.
+- `internal/store` provides dataset lineage, replay quality report, and validation-error summary builders over the existing repository interface.
+- `GET /datasets/:id/lineage` returns dataset -> event file -> replay job lineage with metric/error counts and error types.
+- `GET /replay-jobs/:id/report` returns a JSON quality report; `GET /replay-jobs/:id/report.csv` exports row-level validation errors.
+- `GET /validation-errors/summary` groups validation errors by type, file, symbol, and day.
+- The dashboard adds dataset lineage pages, replay manifest display, quality report export links, and a validation-error distribution section.
+- No new stack was introduced; this stays in Go, Postgres/sqlc, the existing worker, and server-rendered HTML.
+
 ## Expected Fixture Results
 
 | Fixture | Expected valid events | Expected malformed rows | Expected sequence gaps |
@@ -140,6 +151,25 @@ Final verification after supervisor integration:
 - `python3 -m json.tool deploy/grafana/dashboards/market-replay-overview.json`
 - `ruby -e 'require "yaml"; ...'` over compose, Prometheus, and Grafana provisioning YAML.
 - `git diff --check`
+
+P1 governance verification on 2026-05-21:
+
+- `CGO_ENABLED=1 .tools/go/bin/go test -ldflags=-linkmode=external ./...`
+- `.tools/bin/sqlc generate`
+- `.tools/bin/goose -dir db/migrations validate`
+- `CGO_ENABLED=1 .tools/go/bin/go test -ldflags=-linkmode=external -tags kafka ./internal/kafkastream ./cmd/kafka-replay`
+- `DATABASE_URL='postgres://market:market@127.0.0.1:5432/market_replay?sslmode=disable' REDIS_ADDR='127.0.0.1:6379' CGO_ENABLED=1 .tools/go/bin/go test -ldflags=-linkmode=external -tags integration ./internal/store ./internal/queue`
+- `KAFKA_BROKERS='127.0.0.1:9092' CGO_ENABLED=1 .tools/go/bin/go test -ldflags=-linkmode=external -tags 'integration kafka' ./internal/kafkastream ./cmd/kafka-replay`
+- `make GO=.tools/go/bin/go build`
+- `make GO=.tools/go/bin/go build-kafka`
+- `make GO=.tools/go/bin/go validate-fixtures`
+- `PATH="/opt/homebrew/bin:$PATH" docker build --build-arg TARGETARCH=arm64 --build-arg GOPROXY=https://goproxy.cn,direct --build-arg GOSUMDB=sum.golang.google.cn -t market-replay-service:local .`
+- `PATH="/opt/homebrew/bin:$PATH" docker compose --profile app up -d --no-deps --force-recreate api worker`
+- API smoke created a replay job for `testdata/sequence_gap.jsonl`, verified `GET /replay-jobs/:id/report`, `GET /replay-jobs/:id/report.csv`, `GET /datasets/:id/lineage`, and `GET /validation-errors/summary`.
+- Dashboard smoke verified the validation-error summary section and dataset lineage page through the running API container.
+- OpenAPI YAML, Compose/Prometheus/Grafana YAML, Grafana dashboard JSON, and `git diff --check` passed.
+
+The external linker flag was required only for local macOS 26 + bundled Go 1.22.5 test-binary execution; the project code remains pure Go and Docker builds still use `CGO_ENABLED=0`.
 
 ## Next Phase Candidate
 

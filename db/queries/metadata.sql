@@ -14,40 +14,54 @@ FROM datasets
 WHERE id = $1;
 
 -- name: CreateEventFile :one
-INSERT INTO event_files (id, dataset_id, path, format, symbol, bytes)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, dataset_id, path, format, symbol, bytes, created_at;
+INSERT INTO event_files (id, dataset_id, path, format, symbol, bytes, sha256, rows)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, dataset_id, path, format, symbol, bytes, created_at, sha256, rows;
 
 -- name: GetEventFile :one
-SELECT id, dataset_id, path, format, symbol, bytes, created_at
+SELECT id, dataset_id, path, format, symbol, bytes, created_at, sha256, rows
 FROM event_files
 WHERE id = $1;
+
+-- name: ListEventFiles :many
+SELECT id, dataset_id, path, format, symbol, bytes, created_at, sha256, rows
+FROM event_files
+WHERE dataset_id = $1
+ORDER BY created_at ASC;
+
+-- name: UpdateEventFileStats :one
+UPDATE event_files
+SET sha256 = $2,
+    rows = $3,
+    bytes = $4
+WHERE id = $1
+RETURNING id, dataset_id, path, format, symbol, bytes, created_at, sha256, rows;
 
 -- name: CreateReplayJob :one
 INSERT INTO replay_jobs (id, dataset_id, event_file_id, idempotency_key, symbol, speed, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at;
+    started_at, completed_at, canceled_at, manifest;
 
 -- name: GetReplayJob :one
 SELECT id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 FROM replay_jobs
 WHERE id = $1;
 
 -- name: GetReplayJobByIdempotencyKey :one
 SELECT id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 FROM replay_jobs
 WHERE idempotency_key = $1;
 
 -- name: ListReplayJobs :many
 SELECT id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at
+    started_at, completed_at, canceled_at, manifest
 FROM replay_jobs
 ORDER BY created_at ASC;
 
@@ -62,12 +76,20 @@ SET status = $2,
 WHERE id = $1
 RETURNING id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at;
+    started_at, completed_at, canceled_at, manifest;
 
 -- name: UpdateReplayCheckpoint :execrows
 UPDATE replay_jobs
 SET checkpoint_line = GREATEST(checkpoint_line, $2)
 WHERE id = $1;
+
+-- name: UpdateReplayManifest :one
+UPDATE replay_jobs
+SET manifest = $2
+WHERE id = $1
+RETURNING id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
+    symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
+    started_at, completed_at, canceled_at, manifest;
 
 -- name: CompleteReplayJobStatus :execrows
 UPDATE replay_jobs
@@ -110,4 +132,4 @@ SET status = 'canceled', canceled_at = $2
 WHERE id = $1
 RETURNING id, dataset_id, event_file_id, COALESCE(idempotency_key, '') AS idempotency_key,
     symbol, speed, status, attempts, last_error, checkpoint_line, created_at,
-    started_at, completed_at, canceled_at;
+    started_at, completed_at, canceled_at, manifest;

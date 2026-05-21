@@ -2,10 +2,14 @@ package api_test
 
 import (
 	"bytes"
+	"context"
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/orynwilder/market-replay-service/internal/api"
 	"github.com/orynwilder/market-replay-service/internal/store"
@@ -144,6 +148,96 @@ func TestAPIDuplicateReplayJobIdempotencyReturnsOriginalJob(t *testing.T) {
 	decodeJSON(t, secondResp, &second)
 	if second.ID != first.ID {
 		t.Fatalf("duplicate job id = %q, want original %q", second.ID, first.ID)
+	}
+}
+
+func TestAPIGovernanceLineageReportAndValidationSummary(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryRepository()
+	router := api.NewRouter(repo)
+	dataset, _ := repo.CreateDataset(ctx, store.CreateDatasetParams{Name: "governance"})
+	file, _ := repo.CreateEventFile(ctx, store.CreateEventFileParams{
+		DatasetID: dataset.ID,
+		Path:      "testdata/sequence_gap.jsonl",
+		Format:    "jsonl",
+		Symbol:    "BTCUSDT",
+		Bytes:     4096,
+		SHA256:    strings.Repeat("b", 64),
+		Rows:      4,
+	})
+	job, _ := repo.CreateReplayJob(ctx, store.CreateReplayJobParams{
+		DatasetID:   dataset.ID,
+		EventFileID: file.ID,
+		Symbol:      "BTCUSDT",
+		Speed:       "max",
+	})
+	if _, err := repo.UpdateReplayManifest(ctx, job.ID, store.ReplayManifest{
+		InputFileSHA256: strings.Repeat("b", 64),
+		InputRows:       4,
+		InputBytes:      4096,
+		AppVersion:      "test",
+		CheckpointLine:  4,
+		ErrorCount:      1,
+		SequenceGaps:    1,
+		Duration:        10 * time.Millisecond,
+	}); err != nil {
+		t.Fatalf("UpdateReplayManifest returned error: %v", err)
+	}
+	if _, err := repo.CompleteReplayJob(ctx, job.ID, store.CompleteReplayJobParams{
+		Metric: store.ReplayMetric{Rows: 4, Events: 4, SequenceGaps: 1, Duration: 10 * time.Millisecond},
+		Errors: []store.ValidationError{{
+			Line:    2,
+			Symbol:  "BTCUSDT",
+			Type:    "sequence_gap",
+			Message: "gap",
+		}},
+	}); err != nil {
+		t.Fatalf("CompleteReplayJob returned error: %v", err)
+	}
+
+	lineageResp := doJSON(t, router, http.MethodGet, "/datasets/"+dataset.ID+"/lineage", nil)
+	if lineageResp.Code != http.StatusOK {
+		t.Fatalf("GET lineage status = %d body = %s, want %d", lineageResp.Code, lineageResp.Body.String(), http.StatusOK)
+	}
+	var lineage store.DatasetLineage
+	decodeJSON(t, lineageResp, &lineage)
+	if lineage.Dataset.ID != dataset.ID || len(lineage.EventFiles) != 1 || len(lineage.EventFiles[0].Jobs) != 1 {
+		t.Fatalf("lineage = %#v, want dataset -> file -> job", lineage)
+	}
+
+	reportResp := doJSON(t, router, http.MethodGet, "/replay-jobs/"+job.ID+"/report", nil)
+	if reportResp.Code != http.StatusOK {
+		t.Fatalf("GET report status = %d body = %s, want %d", reportResp.Code, reportResp.Body.String(), http.StatusOK)
+	}
+	var report store.ReplayQualityReport
+	decodeJSON(t, reportResp, &report)
+	if report.Job.ID != job.ID || report.EventFile.SHA256 != strings.Repeat("b", 64) || len(report.ErrorSummary) != 1 {
+		t.Fatalf("report = %#v, want job, file hash, and error summary", report)
+	}
+
+	csvResp := doJSON(t, router, http.MethodGet, "/replay-jobs/"+job.ID+"/report.csv", nil)
+	if csvResp.Code != http.StatusOK {
+		t.Fatalf("GET report.csv status = %d body = %s, want %d", csvResp.Code, csvResp.Body.String(), http.StatusOK)
+	}
+	if got := csvResp.Header().Get("Content-Type"); !strings.Contains(got, "text/csv") {
+		t.Fatalf("report.csv content type = %q, want text/csv", got)
+	}
+	records, err := csv.NewReader(strings.NewReader(csvResp.Body.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("parse CSV report: %v", err)
+	}
+	if len(records) != 2 || records[0][0] != "job_id" || records[1][3] != "sequence_gap" {
+		t.Fatalf("CSV records = %#v, want header and sequence_gap row", records)
+	}
+
+	summaryResp := doJSON(t, router, http.MethodGet, "/validation-errors/summary", nil)
+	if summaryResp.Code != http.StatusOK {
+		t.Fatalf("GET validation summary status = %d body = %s, want %d", summaryResp.Code, summaryResp.Body.String(), http.StatusOK)
+	}
+	var summary []store.ValidationErrorSummary
+	decodeJSON(t, summaryResp, &summary)
+	if len(summary) != 1 || summary[0].Type != "sequence_gap" || summary[0].FilePath != file.Path {
+		t.Fatalf("summary = %#v, want sequence_gap grouped by file", summary)
 	}
 }
 

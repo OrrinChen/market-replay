@@ -1,6 +1,6 @@
 # Market Replay Service
 
-Market Replay Service is a pure Go backend for historical market-data replay, validation, asynchronous job control, observability, and bounded benchmark reporting. The replay core stays intentionally narrow: parse market-data files, replay events in timestamp order, validate sequence integrity, and measure replay performance with reproducible local workloads.
+Market Replay Service is a pure Go backend for historical market-data replay, validation, asynchronous job control, data-quality reporting, observability, and bounded benchmark reporting. The replay core stays intentionally narrow: parse market-data files, replay events in timestamp order, validate sequence integrity, record replay manifests, and measure replay performance with reproducible local workloads.
 
 This repository is not a live trading system and not an automatic trading engine. The service layers API metadata, Redis control-plane jobs, observability, Kafka-compatible data-plane replay, and a minimal server-rendered dashboard around the pure Go replay core while keeping all claims bounded to historical replay diagnostics.
 
@@ -14,11 +14,12 @@ The full local roadmap demo is implemented and smoke-tested with Docker Compose:
 - Redpanda/Kafka-compatible data-plane replay producer/consumer benchmark path.
 - Prometheus and Grafana observability with API and worker scrape targets.
 - Minimal server-rendered dashboard mounted by the Go API server.
+- Data-governance slice for dataset lineage, replay job manifests, validation-error summaries, and JSON/CSV quality report exports.
 
-Recent verification on 2026-05-20:
+Recent verification on 2026-05-21:
 
 ```bash
-make GO=.tools/go/bin/go test
+CGO_ENABLED=1 .tools/go/bin/go test -ldflags=-linkmode=external ./...
 make GO=.tools/go/bin/go test-kafka
 DATABASE_URL='postgres://market:market@127.0.0.1:5432/market_replay?sslmode=disable' \
 REDIS_ADDR='127.0.0.1:6379' \
@@ -77,6 +78,12 @@ If Go is not on `PATH`, pass an explicit binary:
 make GO=/path/to/go test
 ```
 
+On macOS 26 with the bundled Go 1.22.5 runtime, test binaries may require the external linker:
+
+```bash
+CGO_ENABLED=1 .tools/go/bin/go test -ldflags=-linkmode=external ./...
+```
+
 ## Phase 7-8 Operations Slice
 
 The dashboard is a small Go `net/http` package, not a React application. It accepts `store.Repository` and renders:
@@ -85,6 +92,8 @@ The dashboard is a small Go `net/http` package, not a React application. It acce
 - Replay Jobs
 - Job Detail
 - Validation Errors
+- Dataset Lineage
+- Quality Report Export
 - Metrics Summary
 - Benchmark Report
 
@@ -106,6 +115,15 @@ docker compose --profile app up api worker
 ```
 
 In this topology, Postgres is metadata/results storage, Redis is the control-plane queue, and Redpanda provides a Kafka-compatible broker for the data-plane replay CLI. Prometheus scrapes API metrics from `api:8080` and worker metrics from `worker:9090`; Grafana provisions the bundled dashboard. The Docker image builds pure Go binaries for the CLI, API server, worker, and Kafka replay tool.
+
+Governance endpoints:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /datasets/:id/lineage` | Dataset to event-file to replay-job lineage with metric/error counts. |
+| `GET /replay-jobs/:id/report` | Replay quality report JSON with dataset, event file, manifest, metrics, errors, and error summary. |
+| `GET /replay-jobs/:id/report.csv` | CSV export of row-level validation errors for a replay job. |
+| `GET /validation-errors/summary` | Validation-error distribution by type, file, symbol, and day. |
 
 ## Documentation
 

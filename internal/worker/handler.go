@@ -2,9 +2,12 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -32,6 +35,12 @@ type ReplayHandler struct {
 	logger        *zap.Logger
 	cfg           ReplayHandlerConfig
 	activeWorkers atomic.Int64
+}
+
+type processedFileStats struct {
+	SHA256 string
+	Rows   int64
+	Bytes  int64
 }
 
 func NewReplayHandler(repo store.Repository, logger *zap.Logger, cfg ReplayHandlerConfig) *ReplayHandler {
@@ -115,11 +124,39 @@ func (h *ReplayHandler) run(ctx context.Context, job store.ReplayJob) error {
 		symbol = file.Symbol
 	}
 
-	metric, failures, err := h.processFile(ctx, latest, file.Path, format, symbol)
+	resumeFromLine := latest.CheckpointLine
+	metric, failures, stats, err := h.processFile(ctx, latest, file.Path, format, symbol)
 	if err != nil {
 		return err
 	}
 	if err := h.repo.UpdateReplayCheckpoint(ctx, job.ID, metric.Rows); err != nil {
+		return err
+	}
+	if _, err := h.repo.UpdateEventFileStats(ctx, file.ID, store.UpdateEventFileStatsParams{
+		SHA256: stats.SHA256,
+		Rows:   stats.Rows,
+		Bytes:  stats.Bytes,
+	}); err != nil {
+		return err
+	}
+	manifest := store.ReplayManifest{
+		InputPath:       file.Path,
+		InputFormat:     string(format),
+		InputSymbol:     symbol,
+		InputFileSHA256: stats.SHA256,
+		InputBytes:      stats.Bytes,
+		InputRows:       stats.Rows,
+		AppVersion:      "dev",
+		StartedAt:       metric.CreatedAt.Add(-metric.Duration),
+		CompletedAt:     metric.CreatedAt,
+		Duration:        metric.Duration,
+		CheckpointLine:  metric.Rows,
+		ResumeFromLine:  resumeFromLine,
+		ErrorCount:      int64(len(failures)),
+		MalformedEvents: metric.MalformedEvents,
+		SequenceGaps:    metric.SequenceGaps,
+	}
+	if _, err := h.repo.UpdateReplayManifest(ctx, job.ID, manifest); err != nil {
 		return err
 	}
 	_, err = h.repo.CompleteReplayJob(ctx, job.ID, store.CompleteReplayJobParams{
@@ -168,12 +205,21 @@ func (h *ReplayHandler) recordReplayMetrics(ctx context.Context, job store.Repla
 	})
 }
 
-func (h *ReplayHandler) processFile(ctx context.Context, job store.ReplayJob, path string, format parser.Format, symbol string) (store.ReplayMetric, []event.ValidationFailure, error) {
-	stream, err := parser.Open(path, format)
+func (h *ReplayHandler) processFile(ctx context.Context, job store.ReplayJob, path string, format parser.Format, symbol string) (store.ReplayMetric, []event.ValidationFailure, processedFileStats, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return store.ReplayMetric{}, nil, err
+		return store.ReplayMetric{}, nil, processedFileStats{}, err
 	}
-	defer stream.Close()
+	defer file.Close()
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return store.ReplayMetric{}, nil, processedFileStats{}, err
+	}
+	hasher := sha256.New()
+	stream, err := parser.NewStream(io.TeeReader(file, hasher), format)
+	if err != nil {
+		return store.ReplayMetric{}, nil, processedFileStats{}, err
+	}
 
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
@@ -183,7 +229,7 @@ func (h *ReplayHandler) processFile(ctx context.Context, job store.ReplayJob, pa
 	lastLine := int64(0)
 	for {
 		if err := ctx.Err(); err != nil {
-			return store.ReplayMetric{}, nil, err
+			return store.ReplayMetric{}, nil, processedFileStats{}, err
 		}
 		record, err := stream.Next()
 		if err == io.EOF {
@@ -205,6 +251,11 @@ func (h *ReplayHandler) processFile(ctx context.Context, job store.ReplayJob, pa
 			if result.Events > 0 && after.Mallocs >= before.Mallocs {
 				allocsPerEvent = float64(after.Mallocs-before.Mallocs) / float64(result.Events)
 			}
+			stats := processedFileStats{
+				SHA256: hex.EncodeToString(hasher.Sum(nil)),
+				Rows:   rows,
+				Bytes:  fileInfo.Size(),
+			}
 			return store.ReplayMetric{
 				Rows:            rows,
 				Events:          result.Events,
@@ -216,10 +267,10 @@ func (h *ReplayHandler) processFile(ctx context.Context, job store.ReplayJob, pa
 				PeakAllocBytes:  peakAlloc,
 				AllocsPerEvent:  allocsPerEvent,
 				CreatedAt:       time.Now().UTC(),
-			}, result.Failures, nil
+			}, result.Failures, stats, nil
 		}
 		if err != nil {
-			return store.ReplayMetric{}, nil, err
+			return store.ReplayMetric{}, nil, processedFileStats{}, err
 		}
 		lastLine = record.Line
 		if record.Line <= job.CheckpointLine {
@@ -229,14 +280,14 @@ func (h *ReplayHandler) processFile(ctx context.Context, job store.ReplayJob, pa
 		validator.Process(record)
 		if record.Line > job.CheckpointLine && record.Line%h.cfg.CheckpointEvery == 0 {
 			if err := h.repo.UpdateReplayCheckpoint(ctx, job.ID, record.Line); err != nil {
-				return store.ReplayMetric{}, nil, err
+				return store.ReplayMetric{}, nil, processedFileStats{}, err
 			}
 			current, err := h.repo.GetReplayJob(ctx, job.ID)
 			if err != nil {
-				return store.ReplayMetric{}, nil, err
+				return store.ReplayMetric{}, nil, processedFileStats{}, err
 			}
 			if current.Status == store.JobStatusCanceled {
-				return store.ReplayMetric{}, nil, context.Canceled
+				return store.ReplayMetric{}, nil, processedFileStats{}, context.Canceled
 			}
 			var currentMem runtime.MemStats
 			runtime.ReadMemStats(&currentMem)
@@ -263,7 +314,7 @@ func processFile(path string, format parser.Format, symbol, speedValue string) (
 
 	if speed == replay.SpeedMax {
 		handler := NewReplayHandler(store.NewMemoryRepository(), nil, ReplayHandlerConfig{CheckpointEvery: 1<<62 - 1})
-		metric, failures, err := handler.processFile(context.Background(), store.ReplayJob{ID: "local"}, path, format, symbol)
+		metric, failures, _, err := handler.processFile(context.Background(), store.ReplayJob{ID: "local"}, path, format, symbol)
 		if err != nil {
 			return store.ReplayMetric{}, nil, err
 		}

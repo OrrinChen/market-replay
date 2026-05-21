@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -22,14 +21,16 @@ type Handler struct {
 }
 
 type pageData struct {
-	Title       string
-	Datasets    []datasetRow
-	Jobs        []jobRow
-	Job         jobDetail
-	Errors      []validationErrorRow
-	Metrics     []metricRow
-	Summary     metricsSummary
-	GeneratedAt time.Time
+	Title        string
+	Datasets     []datasetRow
+	Jobs         []jobRow
+	Job          jobDetail
+	Errors       []validationErrorRow
+	ErrorSummary []store.ValidationErrorSummary
+	Metrics      []metricRow
+	Summary      metricsSummary
+	Lineage      store.DatasetLineage
+	GeneratedAt  time.Time
 }
 
 type datasetRow struct {
@@ -94,6 +95,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard/jobs", http.StatusFound)
 	case path == "/dashboard/datasets":
 		h.renderDatasets(w, r)
+	case strings.HasPrefix(path, "/dashboard/datasets/") && strings.HasSuffix(path, "/lineage"):
+		id := strings.TrimSuffix(strings.TrimPrefix(path, "/dashboard/datasets/"), "/lineage")
+		h.renderDatasetLineage(w, r, id)
 	case path == "/dashboard/jobs":
 		h.renderJobs(w, r)
 	case strings.HasPrefix(path, "/dashboard/jobs/"):
@@ -110,7 +114,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) renderDatasets(w http.ResponseWriter, r *http.Request) {
-	datasets, jobs, err := h.loadDatasetsAndJobs(r.Context())
+	datasets, err := h.repo.ListDatasets(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -118,27 +122,31 @@ func (h *Handler) renderDatasets(w http.ResponseWriter, r *http.Request) {
 
 	rows := make([]datasetRow, 0, len(datasets))
 	for _, dataset := range datasets {
-		filesByID := map[string]store.EventFile{}
-		for _, job := range jobs {
-			if job.DatasetID != dataset.ID || job.EventFileID == "" {
-				continue
-			}
-			if _, ok := filesByID[job.EventFileID]; ok {
-				continue
-			}
-			file, err := h.repo.GetEventFile(r.Context(), job.EventFileID)
-			if err == nil {
-				filesByID[file.ID] = file
-			}
+		files, err := h.repo.ListEventFiles(r.Context(), dataset.ID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
-		files := make([]store.EventFile, 0, len(filesByID))
-		for _, file := range filesByID {
-			files = append(files, file)
-		}
-		sort.Slice(files, func(i, j int) bool { return files[i].CreatedAt.Before(files[j].CreatedAt) })
 		rows = append(rows, datasetRow{Dataset: dataset, Files: files})
 	}
 	h.render(w, "datasets.html", pageData{Title: "Datasets", Datasets: rows, GeneratedAt: time.Now().UTC()})
+}
+
+func (h *Handler) renderDatasetLineage(w http.ResponseWriter, r *http.Request, id string) {
+	lineage, err := store.BuildDatasetLineage(r.Context(), h.repo, id)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "dataset_lineage.html", pageData{
+		Title:       "Dataset Lineage",
+		Lineage:     lineage,
+		GeneratedAt: time.Now().UTC(),
+	})
 }
 
 func (h *Handler) renderJobs(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +204,17 @@ func (h *Handler) renderValidationErrors(w http.ResponseWriter, r *http.Request)
 			rows = append(rows, validationErrorRow{Error: validationError, Job: job})
 		}
 	}
-	h.render(w, "validation_errors.html", pageData{Title: "Validation Errors", Errors: rows, GeneratedAt: time.Now().UTC()})
+	summary, err := store.BuildValidationErrorSummary(r.Context(), h.repo)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	h.render(w, "validation_errors.html", pageData{
+		Title:        "Validation Errors",
+		Errors:       rows,
+		ErrorSummary: summary,
+		GeneratedAt:  time.Now().UTC(),
+	})
 }
 
 func (h *Handler) renderMetrics(w http.ResponseWriter, r *http.Request, templateName string, title string) {

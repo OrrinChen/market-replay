@@ -1,6 +1,6 @@
 # Operations Runbook
 
-This runbook covers local service scaffolding for replay metadata, Redis control-plane queues, Kafka-compatible data-plane replay, dashboard pages, and observability. The executable surface includes the pure Go CLI, API server, worker, Kafka replay CLI, and dashboard mounted by `cmd/server`.
+This runbook covers local service scaffolding for replay metadata, Redis control-plane queues, Kafka-compatible data-plane replay, data-quality reports, dashboard pages, and observability. The executable surface includes the pure Go CLI, API server, worker, Kafka replay CLI, and dashboard mounted by `cmd/server`.
 
 ## One-Command Startup
 
@@ -33,6 +33,8 @@ flowchart LR
     API --> Redis[("Redis control-plane queue")]
     Worker["Worker service"] --> Redis
     Worker --> Postgres
+    Worker --> Manifest["Manifest: hash, rows, checkpoint"]
+    Manifest --> Postgres
     KafkaReplay["Kafka replay CLI"] --> Kafka["Redpanda/Kafka broker"]
     Metrics --> Prometheus["Prometheus"]
     Prometheus --> Grafana["Grafana"]
@@ -45,7 +47,7 @@ flowchart LR
 | --- | --- | --- |
 | `api` | HTTP API service, dashboard mount, metrics, and pprof endpoint. | Postgres for metadata/results. |
 | `worker` | Replay worker consuming Redis/Asynq control-plane jobs. | Postgres for results and Redis for control state. |
-| `postgres` | Durable dataset, event-file, replay-job, validation-error, and metric metadata. | `postgres-data` volume. |
+| `postgres` | Durable dataset, event-file, replay-job, validation-error, metric, file-stat, and manifest metadata. | `postgres-data` volume. |
 | `redis` | Control-plane queue and job coordination. | `redis-data` volume with append-only file enabled. |
 | `redpanda` | Kafka-compatible broker for market event data-plane replay. | `redpanda-data` volume. |
 | `prometheus` | Metrics scraping and local retention. | `prometheus-data` volume. |
@@ -75,6 +77,10 @@ Runtime endpoints:
 | --- | --- |
 | `/healthz` | API health check. |
 | `/dashboard` | Server-rendered dashboard entrypoint. |
+| `/datasets/:id/lineage` | Dataset lineage JSON for dataset, event files, replay jobs, metrics, and errors. |
+| `/replay-jobs/:id/report` | Replay quality report JSON with manifest, metrics, errors, and summary. |
+| `/replay-jobs/:id/report.csv` | CSV export of validation errors for a replay job. |
+| `/validation-errors/summary` | Validation error distribution grouped by type, file, symbol, and day. |
 | `/metrics` | API Prometheus metrics on the API service; worker metrics are exposed when `WORKER_METRICS_ADDR` is set. |
 | `/debug/pprof/` | Go pprof handlers. |
 
@@ -102,3 +108,5 @@ Runtime endpoints:
 - If dashboard pages error, verify the mounted repository can list datasets/jobs and that `web/templates` is present in the runtime working tree.
 
 Replay checkpoint resume is line-based. On retry, the worker scans checkpointed rows to prime per-symbol validator state, then records metrics and validation errors only for rows after `checkpoint_line`. It does not currently persist byte offsets, so very large files still pay scan cost before the logical resume point.
+
+Replay manifests are written after successful file processing and before completion metadata is returned. They record input hash, rows, bytes, resume line, final checkpoint, duration, malformed count, sequence-gap count, and validation-error count so a quality report can be tied back to the exact replay input.

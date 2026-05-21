@@ -17,6 +17,8 @@ func EnsurePostgresSchema(ctx context.Context, pool postgresPool) error {
 			format TEXT NOT NULL,
 			symbol TEXT NOT NULL DEFAULT '',
 			bytes BIGINT NOT NULL DEFAULT 0,
+			sha256 TEXT NOT NULL DEFAULT '',
+			rows BIGINT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 			CHECK (bytes >= 0)
 		)`,
@@ -35,9 +37,21 @@ func EnsurePostgresSchema(ctx context.Context, pool postgresPool) error {
 			started_at TIMESTAMPTZ,
 			completed_at TIMESTAMPTZ,
 			canceled_at TIMESTAMPTZ,
+			manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
 			CHECK (attempts >= 0),
 			CHECK (checkpoint_line >= 0)
 		)`,
+		`ALTER TABLE event_files ADD COLUMN IF NOT EXISTS sha256 TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE event_files ADD COLUMN IF NOT EXISTS rows BIGINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE replay_jobs ADD COLUMN IF NOT EXISTS manifest JSONB NOT NULL DEFAULT '{}'::jsonb`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint WHERE conname = 'event_files_rows_nonnegative'
+			) THEN
+				ALTER TABLE event_files ADD CONSTRAINT event_files_rows_nonnegative CHECK (rows >= 0);
+			END IF;
+		END $$`,
 		`CREATE TABLE IF NOT EXISTS replay_metrics (
 			id TEXT PRIMARY KEY,
 			job_id TEXT NOT NULL REFERENCES replay_jobs(id) ON DELETE CASCADE,

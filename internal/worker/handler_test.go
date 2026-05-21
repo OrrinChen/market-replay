@@ -47,6 +47,16 @@ func TestReplayHandlerCompletesJobFromMemoryRepositoryFixture(t *testing.T) {
 	if got.CheckpointLine == 0 {
 		t.Fatal("checkpoint line = 0, want final row checkpoint")
 	}
+	if got.Manifest.InputFileSHA256 == "" || got.Manifest.InputRows != got.CheckpointLine {
+		t.Fatalf("manifest = %#v, want input hash and final row count", got.Manifest)
+	}
+	updatedFile, err := repo.GetEventFile(ctx, file.ID)
+	if err != nil {
+		t.Fatalf("GetEventFile returned error: %v", err)
+	}
+	if updatedFile.SHA256 == "" || updatedFile.Rows != got.CheckpointLine || updatedFile.Bytes == 0 {
+		t.Fatalf("event file stats = %#v, want hash, rows, and bytes", updatedFile)
+	}
 	metrics, err := repo.ListReplayMetrics(ctx, job.ID)
 	if err != nil {
 		t.Fatalf("ListReplayMetrics returned error: %v", err)

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Market Replay Service API
-  version: 0.2.0
+  version: 0.3.0
 paths:
   /healthz:
     get:
@@ -64,6 +64,20 @@ paths:
                 $ref: "#/components/schemas/EventFile"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /datasets/{id}/lineage:
+    get:
+      summary: Get dataset lineage
+      parameters:
+        - $ref: "#/components/parameters/DatasetID"
+      responses:
+        "200":
+          description: Dataset to event file to replay job lineage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetLineage"
         "404":
           $ref: "#/components/responses/NotFound"
   /replay-jobs:
@@ -139,6 +153,34 @@ paths:
                   $ref: "#/components/schemas/ValidationError"
         "404":
           $ref: "#/components/responses/NotFound"
+  /replay-jobs/{id}/report:
+    get:
+      summary: Export replay quality report as JSON
+      parameters:
+        - $ref: "#/components/parameters/ReplayJobID"
+      responses:
+        "200":
+          description: Replay quality report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayQualityReport"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /replay-jobs/{id}/report.csv:
+    get:
+      summary: Export replay validation errors as CSV
+      parameters:
+        - $ref: "#/components/parameters/ReplayJobID"
+      responses:
+        "200":
+          description: Validation error CSV report
+          content:
+            text/csv:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
   /replay-jobs/{id}/cancel:
     post:
       summary: Cancel a replay job
@@ -153,8 +195,26 @@ paths:
                 $ref: "#/components/schemas/ReplayJob"
         "404":
           $ref: "#/components/responses/NotFound"
+  /validation-errors/summary:
+    get:
+      summary: Summarize validation errors by type, file, symbol, and day
+      responses:
+        "200":
+          description: Validation error summary rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ValidationErrorSummary"
 components:
   parameters:
+    DatasetID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
     ReplayJobID:
       name: id
       in: path
@@ -217,6 +277,12 @@ components:
         symbol:
           type: string
         bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        sha256:
+          type: string
+        rows:
           type: integer
           format: int64
           minimum: 0
@@ -286,6 +352,109 @@ components:
           type: string
           format: date-time
           nullable: true
+        manifest:
+          $ref: "#/components/schemas/ReplayManifest"
+    ReplayManifest:
+      type: object
+      properties:
+        input_path:
+          type: string
+        input_format:
+          type: string
+        input_symbol:
+          type: string
+        input_file_sha256:
+          type: string
+        input_bytes:
+          type: integer
+          format: int64
+        input_rows:
+          type: integer
+          format: int64
+        app_version:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        duration_ns:
+          type: integer
+          format: int64
+        checkpoint_line:
+          type: integer
+          format: int64
+        resume_from_line:
+          type: integer
+          format: int64
+        error_count:
+          type: integer
+          format: int64
+        malformed_events:
+          type: integer
+          format: int64
+        sequence_gaps:
+          type: integer
+          format: int64
+    DatasetLineage:
+      type: object
+      properties:
+        dataset:
+          $ref: "#/components/schemas/Dataset"
+        event_files:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventFileLineage"
+        generated_at:
+          type: string
+          format: date-time
+    EventFileLineage:
+      type: object
+      properties:
+        event_file:
+          $ref: "#/components/schemas/EventFile"
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReplayJobLineage"
+    ReplayJobLineage:
+      type: object
+      properties:
+        job:
+          $ref: "#/components/schemas/ReplayJob"
+        metric_count:
+          type: integer
+        error_count:
+          type: integer
+        error_types:
+          type: array
+          items:
+            type: string
+    ReplayQualityReport:
+      type: object
+      properties:
+        dataset:
+          $ref: "#/components/schemas/Dataset"
+        event_file:
+          $ref: "#/components/schemas/EventFile"
+        job:
+          $ref: "#/components/schemas/ReplayJob"
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReplayMetric"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationError"
+        error_summary:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationErrorSummary"
+        generated_at:
+          type: string
+          format: date-time
     ReplayMetric:
       type: object
       properties:
@@ -323,6 +492,38 @@ components:
         allocs_per_event:
           type: number
         created_at:
+          type: string
+          format: date-time
+    ValidationErrorSummary:
+      type: object
+      properties:
+        type:
+          type: string
+        symbol:
+          type: string
+        dataset_id:
+          type: string
+        dataset_name:
+          type: string
+        event_file_id:
+          type: string
+        file_path:
+          type: string
+        day:
+          type: string
+        count:
+          type: integer
+          format: int64
+        first_line:
+          type: integer
+          format: int64
+        last_line:
+          type: integer
+          format: int64
+        first_seen_at:
+          type: string
+          format: date-time
+        last_seen_at:
           type: string
           format: date-time
     ValidationError:

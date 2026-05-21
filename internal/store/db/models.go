@@ -23,6 +23,8 @@ type EventFile struct {
 	Symbol    string             `json:"symbol"`
 	Bytes     int64              `json:"bytes"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	Sha256    string             `json:"sha256"`
+	Rows      int64              `json:"rows"`
 }
 
 type ReplayJob struct {
@@ -40,6 +42,7 @@ type ReplayJob struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	CanceledAt     pgtype.Timestamptz `json:"canceled_at"`
+	Manifest       []byte             `json:"manifest"`
 }
 
 type ReplayMetric struct {

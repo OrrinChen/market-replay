@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -66,6 +67,8 @@ func (r *PostgresRepository) CreateEventFile(ctx context.Context, params CreateE
 		Format:    params.Format,
 		Symbol:    params.Symbol,
 		Bytes:     params.Bytes,
+		Sha256:    params.SHA256,
+		Rows:      params.Rows,
 	})
 	if err != nil {
 		return EventFile{}, mapPostgresError(err)
@@ -75,6 +78,34 @@ func (r *PostgresRepository) CreateEventFile(ctx context.Context, params CreateE
 
 func (r *PostgresRepository) GetEventFile(ctx context.Context, id string) (EventFile, error) {
 	file, err := r.queries.GetEventFile(ctx, id)
+	if err != nil {
+		return EventFile{}, mapPostgresError(err)
+	}
+	return convertEventFile(file), nil
+}
+
+func (r *PostgresRepository) ListEventFiles(ctx context.Context, datasetID string) ([]EventFile, error) {
+	if _, err := r.GetDataset(ctx, datasetID); err != nil {
+		return nil, err
+	}
+	rows, err := r.queries.ListEventFiles(ctx, datasetID)
+	if err != nil {
+		return nil, mapPostgresError(err)
+	}
+	files := make([]EventFile, 0, len(rows))
+	for _, row := range rows {
+		files = append(files, convertEventFile(row))
+	}
+	return files, nil
+}
+
+func (r *PostgresRepository) UpdateEventFileStats(ctx context.Context, id string, params UpdateEventFileStatsParams) (EventFile, error) {
+	file, err := r.queries.UpdateEventFileStats(ctx, storedb.UpdateEventFileStatsParams{
+		ID:     id,
+		Sha256: params.SHA256,
+		Rows:   params.Rows,
+		Bytes:  params.Bytes,
+	})
 	if err != nil {
 		return EventFile{}, mapPostgresError(err)
 	}
@@ -112,6 +143,7 @@ func (r *PostgresRepository) CreateReplayJob(ctx context.Context, params CreateR
 	return convertReplayJob(
 		job.ID, job.DatasetID, job.EventFileID, job.IdempotencyKey, job.Symbol, job.Speed, job.Status,
 		job.Attempts, job.LastError, job.CheckpointLine, job.CreatedAt, job.StartedAt, job.CompletedAt, job.CanceledAt,
+		job.Manifest,
 	), nil
 }
 
@@ -123,6 +155,7 @@ func (r *PostgresRepository) GetReplayJob(ctx context.Context, id string) (Repla
 	return convertReplayJob(
 		job.ID, job.DatasetID, job.EventFileID, job.IdempotencyKey, job.Symbol, job.Speed, job.Status,
 		job.Attempts, job.LastError, job.CheckpointLine, job.CreatedAt, job.StartedAt, job.CompletedAt, job.CanceledAt,
+		job.Manifest,
 	), nil
 }
 
@@ -134,6 +167,7 @@ func (r *PostgresRepository) GetReplayJobByIdempotencyKey(ctx context.Context, k
 	return convertReplayJob(
 		job.ID, job.DatasetID, job.EventFileID, job.IdempotencyKey, job.Symbol, job.Speed, job.Status,
 		job.Attempts, job.LastError, job.CheckpointLine, job.CreatedAt, job.StartedAt, job.CompletedAt, job.CanceledAt,
+		job.Manifest,
 	), nil
 }
 
@@ -147,6 +181,7 @@ func (r *PostgresRepository) ListReplayJobs(ctx context.Context) ([]ReplayJob, e
 		jobs = append(jobs, convertReplayJob(
 			row.ID, row.DatasetID, row.EventFileID, row.IdempotencyKey, row.Symbol, row.Speed, row.Status,
 			row.Attempts, row.LastError, row.CheckpointLine, row.CreatedAt, row.StartedAt, row.CompletedAt, row.CanceledAt,
+			row.Manifest,
 		))
 	}
 	return jobs, nil
@@ -165,6 +200,7 @@ func (r *PostgresRepository) UpdateReplayJobStatus(ctx context.Context, id strin
 	return convertReplayJob(
 		job.ID, job.DatasetID, job.EventFileID, job.IdempotencyKey, job.Symbol, job.Speed, job.Status,
 		job.Attempts, job.LastError, job.CheckpointLine, job.CreatedAt, job.StartedAt, job.CompletedAt, job.CanceledAt,
+		job.Manifest,
 	), nil
 }
 
@@ -180,6 +216,25 @@ func (r *PostgresRepository) UpdateReplayCheckpoint(ctx context.Context, id stri
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *PostgresRepository) UpdateReplayManifest(ctx context.Context, id string, manifest ReplayManifest) (ReplayJob, error) {
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		return ReplayJob{}, err
+	}
+	job, err := r.queries.UpdateReplayManifest(ctx, storedb.UpdateReplayManifestParams{
+		ID:       id,
+		Manifest: encoded,
+	})
+	if err != nil {
+		return ReplayJob{}, mapPostgresError(err)
+	}
+	return convertReplayJob(
+		job.ID, job.DatasetID, job.EventFileID, job.IdempotencyKey, job.Symbol, job.Speed, job.Status,
+		job.Attempts, job.LastError, job.CheckpointLine, job.CreatedAt, job.StartedAt, job.CompletedAt, job.CanceledAt,
+		job.Manifest,
+	), nil
 }
 
 func (r *PostgresRepository) CompleteReplayJob(ctx context.Context, jobID string, params CompleteReplayJobParams) (ReplayJob, error) {
@@ -288,6 +343,7 @@ func (r *PostgresRepository) CancelReplayJob(ctx context.Context, jobID string) 
 	return convertReplayJob(
 		job.ID, job.DatasetID, job.EventFileID, job.IdempotencyKey, job.Symbol, job.Speed, job.Status,
 		job.Attempts, job.LastError, job.CheckpointLine, job.CreatedAt, job.StartedAt, job.CompletedAt, job.CanceledAt,
+		job.Manifest,
 	), nil
 }
 
@@ -308,6 +364,8 @@ func convertEventFile(row storedb.EventFile) EventFile {
 		Format:    row.Format,
 		Symbol:    row.Symbol,
 		Bytes:     row.Bytes,
+		SHA256:    row.Sha256,
+		Rows:      row.Rows,
 		CreatedAt: timeFromPG(row.CreatedAt),
 	}
 }
@@ -327,6 +385,7 @@ func convertReplayJob(
 	startedAt pgtype.Timestamptz,
 	completedAt pgtype.Timestamptz,
 	canceledAt pgtype.Timestamptz,
+	manifestJSON []byte,
 ) ReplayJob {
 	return ReplayJob{
 		ID:             id,
@@ -343,6 +402,7 @@ func convertReplayJob(
 		StartedAt:      timePtrFromPG(startedAt),
 		CompletedAt:    timePtrFromPG(completedAt),
 		CanceledAt:     timePtrFromPG(canceledAt),
+		Manifest:       replayManifestFromJSON(manifestJSON),
 	}
 }
 
@@ -362,6 +422,17 @@ func convertReplayMetric(row storedb.ReplayMetric) ReplayMetric {
 		AllocsPerEvent:  row.AllocsPerEvent,
 		CreatedAt:       timeFromPG(row.CreatedAt),
 	}
+}
+
+func replayManifestFromJSON(data []byte) ReplayManifest {
+	if len(data) == 0 {
+		return ReplayManifest{}
+	}
+	var manifest ReplayManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return ReplayManifest{}
+	}
+	return manifest
 }
 
 func convertValidationError(row storedb.ValidationError) ValidationError {
